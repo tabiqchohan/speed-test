@@ -1,8 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { formatSpeed } from '../../shared/helpers.js'
+import {
+  testPing, testJitter, testPacketLoss, testDNS,
+  testDownload, testUpload, testBufferbloat, testStability,
+  testAllGamingServers, detectThrottling,
+} from '../../shared/speedTest.js'
 
 const API_BASE = '/api'
 const IS_VERCEL = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+const PHASE_LABELS = {
+  ping: 'Ping', jitter: 'Jitter', packet_loss: 'Packet Loss',
+  dns: 'DNS', download: 'Download', upload: 'Upload',
+  bufferbloat: 'Bufferbloat', stability: 'Stability',
+  gaming: 'Gaming Servers', idle: '', complete: 'Complete',
+}
 
 function loadHistory() {
   try { return JSON.parse(localStorage.getItem('tw_history') || '[]') } catch { return [] }
@@ -10,69 +21,14 @@ function loadHistory() {
 
 function saveHistory(results) {
   const history = loadHistory()
-  history.unshift({ ...results, id: Date.now(), date: new Date().toISOString() })
+  history.unshift({ id: Date.now(), date: new Date().toISOString(), ...results })
   localStorage.setItem('tw_history', JSON.stringify(history.slice(0, 100)))
 }
 
-async function testPing() {
-  const pings = []
-  for (let i = 0; i < 3; i++) {
-    const start = performance.now()
-    try {
-      const c = new AbortController()
-      setTimeout(() => c.abort(), 3000)
-      await fetch(API_BASE + '/ping', { signal: c.signal, cache: 'no-store' })
-      pings.push(performance.now() - start)
-    } catch {}
-  }
-  const valid = pings.filter(p => p !== null)
-  return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0
-}
-
-async function testDownload(onLive) {
-  const size = 5242880
-  const start = performance.now()
-  let loaded = 0
-  try {
-    const c = new AbortController()
-    setTimeout(() => c.abort(), 8000)
-    const url = IS_VERCEL
-      ? `https://speed.cloudflare.com/__down?bytes=${size}`
-      : `${API_BASE}/download?size=5mb`
-    const res = await fetch(url, { signal: c.signal, cache: 'no-store' })
-    if (!res.ok) return 0
-    const reader = res.body.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      loaded += value.length
-      const elapsed = performance.now() - start
-      if (elapsed > 0) onLive((loaded * 8) / elapsed / 1000)
-    }
-    const elapsed = performance.now() - start
-    return elapsed > 0 ? (loaded * 8) / elapsed / 1000 : 0
-  } catch { return 0 }
-}
-
-async function testUpload(onLive) {
-  const size = 524288
-  const data = new Uint8Array(size).map(() => Math.random() * 256)
-  const start = performance.now()
-  try {
-    const c = new AbortController()
-    setTimeout(() => c.abort(), 5000)
-    const url = API_BASE + '/upload'
-    await fetch(url, {
-      method: 'POST', body: data, signal: c.signal, cache: 'no-store',
-    })
-    const elapsed = performance.now() - start
-    if (elapsed > 0) {
-      const speed = (size * 8) / elapsed / 1000
-      onLive(speed)
-      return speed
-    }
-    return 0
-  } catch { return 0 }
+function StabGrade({ score }) {
+  if (score == null) return <span className="text-gray-500">--</span>
+  const color = score >= 90 ? 'text-green-400' : score >= 70 ? 'text-yellow-400' : score >= 50 ? 'text-orange-400' : 'text-red-400'
+  return <span className={color}>{score}</span>
 }
 
 export default function HomePage() {
@@ -113,23 +69,53 @@ export default function HomePage() {
     setLiveSpeed(0)
     speedRef.current = 0
 
-    setPhase('ping')
-    const ping = await testPing()
+    const serverUrl = ''
+    const planSpeed = parseFloat(localStorage.getItem('tw_plan_speed') || '0')
 
-    setPhase('download')
-    const download = await testDownload(s => { speedRef.current = s })
+    const onProgress = (p) => setPhase(p.phase)
 
-    setPhase('upload')
-    const upload = await testUpload(s => { speedRef.current = s })
+    onProgress({ phase: 'ping' })
+    const ping = await testPing(serverUrl, { count: 3 })
 
-    const res = {
-      ping: { average: ping },
-      download: { average: download },
-      upload: { average: upload },
-      timestamp: new Date().toISOString(),
+    onProgress({ phase: 'jitter' })
+    const jitter = await testJitter(serverUrl, { count: 10 })
+
+    onProgress({ phase: 'packet_loss' })
+    const packetLoss = await testPacketLoss(serverUrl, { count: 5 })
+
+    onProgress({ phase: 'dns' })
+    const dns = await testDNS()
+
+    onProgress({ phase: 'download' })
+    const download = await testDownload(serverUrl, {
+      size: 5242880, samples: 2, useCDN: IS_VERCEL,
+      onLiveSpeed: (d) => { speedRef.current = d.currentMbps },
+    })
+
+    onProgress({ phase: 'upload' })
+    const upload = await testUpload(serverUrl, {
+      size: 1048576, samples: 2,
+    })
+
+    onProgress({ phase: 'bufferbloat' })
+    const bufferbloat = await testBufferbloat(serverUrl)
+
+    onProgress({ phase: 'stability' })
+    const stability = await testStability(serverUrl, 3000)
+
+    onProgress({ phase: 'gaming' })
+    const gamingServers = await testAllGamingServers()
+
+    let throttling = null
+    if (planSpeed > 0) {
+      throttling = await detectThrottling(serverUrl, planSpeed, { samples: 1 })
     }
 
-    speedRef.current = download
+    onProgress({ phase: 'complete' })
+
+    const res = { ping, jitter, packetLoss, dns, download, upload, bufferbloat, stability, gamingServers, throttling, timestamp: new Date().toISOString() }
+
+    speedRef.current = download?.average || 0
     setTimeout(() => {
       setResults(res)
       setTesting(false)
@@ -140,7 +126,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0a1628] to-gray-900 text-white flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-lg mx-auto w-full">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-2xl mx-auto w-full">
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 mb-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -186,7 +172,7 @@ export default function HomePage() {
               <div className="text-gray-500 text-base font-medium mt-0.5">{display.unit}</div>
               {testing && (
                 <span className="text-xs text-gray-600 mt-2 font-medium tracking-widest uppercase">
-                  {phase === 'ping' ? 'PING' : phase === 'download' ? 'DOWNLOAD' : 'UPLOAD'}
+                  {PHASE_LABELS[phase] || phase}
                 </span>
               )}
             </div>
@@ -194,38 +180,65 @@ export default function HomePage() {
         </div>
 
         {results && (
-          <div className="w-full grid grid-cols-3 gap-4 mt-4 animate-fade-in">
-            <div className="text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Ping</div>
-              <div className="text-2xl font-bold text-cyan-400">
-                {results.ping.average.toFixed(0)}
-                <span className="text-xs text-gray-600 ml-0.5">ms</span>
-              </div>
+          <div className="w-full space-y-4 animate-fade-in mt-2">
+            <div className="grid grid-cols-4 gap-3">
+              <ResultCard label="Ping" value={results.ping?.average?.toFixed(0)} unit="ms" color="text-cyan-400" />
+              <ResultCard label="Jitter" value={results.jitter?.average?.toFixed(1)} unit="ms" color="text-purple-400" />
+              <ResultCard label="Download" value={results.download?.average?.toFixed(1)} unit="Mbps" color="text-blue-400" />
+              <ResultCard label="Upload" value={results.upload?.average?.toFixed(1)} unit="Mbps" color="text-green-400" />
             </div>
-            <div className="text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Download</div>
-              <div className="text-2xl font-bold text-blue-400">
-                {results.download.average.toFixed(1)}
-                <span className="text-xs text-gray-600 ml-0.5">Mbps</span>
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Upload</div>
-              <div className="text-2xl font-bold text-green-400">
-                {results.upload.average.toFixed(1)}
-                <span className="text-xs text-gray-600 ml-0.5">Mbps</span>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {results && (
-          <div className="mt-8 text-center">
-            <button onClick={handleStart} className="px-8 py-3 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-all">
-              Test Again
-            </button>
+            <div className="grid grid-cols-4 gap-3">
+              <ResultCard label="Packet Loss" value={results.packetLoss?.lossPercent?.toFixed(1)} unit="%" color={results.packetLoss?.lossPercent > 0 ? 'text-red-400' : 'text-green-400'} />
+              <ResultCard label="DNS" value={results.dns?.average?.toFixed(0)} unit="ms" color="text-yellow-400" />
+              <ResultCard label="Bufferbloat" value={results.bufferbloat?.bufferbloat?.toFixed(0)} unit="ms" color="text-orange-400" />
+              <ResultCard label="Stability" value={<StabGrade score={results.stability?.score} />} unit="" color="" />
+            </div>
+
+            {results.gamingServers && (
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3 font-medium">Gaming Servers</div>
+                <div className="grid grid-cols-5 gap-2">
+                  {Object.entries(results.gamingServers).map(([key, server]) => (
+                    <div key={key} className="text-center">
+                      <div className="text-[10px] text-gray-500 truncate">{server?.name || key}</div>
+                      <div className={`text-sm font-bold ${server?.ping <= 50 ? 'text-green-400' : server?.ping <= 100 ? 'text-yellow-400' : server?.ping <= 200 ? 'text-orange-400' : 'text-red-400'}`}>
+                        {server?.ping || '--'}
+                        <span className="text-[10px] text-gray-600 ml-0.5">ms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {results.throttling && (
+              <div className={`rounded-xl p-3 border text-sm ${results.throttling.isThrottled ? 'bg-red-900/20 border-red-500/30 text-red-300' : 'bg-green-900/20 border-green-500/30 text-green-300'}`}>
+                {results.throttling.isThrottled
+                  ? `Throttling detected: ${results.throttling.actualSpeed} Mbps of ${results.throttling.planSpeed} Mbps plan (${results.throttling.ratio}%)`
+                  : `Plan speed ${results.throttling.planSpeed} Mbps: achieving ${results.throttling.actualSpeed} Mbps`}
+              </div>
+            )}
+
+            <div className="text-center pt-2">
+              <button onClick={handleStart} className="px-8 py-3 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-all">
+                Test Again
+              </button>
+            </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ResultCard({ label, value, unit, color }) {
+  return (
+    <div className="text-center">
+      <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</div>
+      <div className={`text-2xl font-bold ${color || 'text-white'}`}>
+        {value ?? '--'}
+        {unit && <span className="text-xs text-gray-600 ml-0.5">{unit}</span>}
       </div>
     </div>
   )
