@@ -61,9 +61,7 @@ async function testUpload(onLive) {
   try {
     const c = new AbortController()
     setTimeout(() => c.abort(), 5000)
-    const url = IS_VERCEL
-      ? 'https://speed.cloudflare.com/__up'
-      : API_BASE + '/upload'
+    const url = API_BASE + '/upload'
     await fetch(url, {
       method: 'POST', body: data, signal: c.signal, cache: 'no-store',
     })
