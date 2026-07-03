@@ -1,12 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
-import { runFullTest } from '../../shared/speedTest.js'
 import { formatSpeed } from '../../shared/helpers.js'
-import { findServerById } from '../../shared/servers.js'
-import { detectConnectionType } from '../../shared/connectionTypes.js'
 
 const API_BASE = '/api'
-const IS_VERCEL = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && !window.location.hostname.includes('127.0.0.1')
+const IS_VERCEL = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
 
 function loadHistory() {
   try { return JSON.parse(localStorage.getItem('tw_history') || '[]') } catch { return [] }
@@ -18,67 +14,95 @@ function saveHistory(results) {
   localStorage.setItem('tw_history', JSON.stringify(history.slice(0, 100)))
 }
 
-const PHASES = [
-  { key: 'idle', label: 'Ready' },
-  { key: 'ping', label: 'Ping Test' },
-  { key: 'jitter', label: 'Jitter Test' },
-  { key: 'packet_loss', label: 'Packet Loss' },
-  { key: 'dns', label: 'DNS Test' },
-  { key: 'download', label: 'Download Test' },
-  { key: 'upload', label: 'Upload Test' },
-  { key: 'bufferbloat', label: 'Bufferbloat' },
-  { key: 'stability', label: 'Stability' },
-  { key: 'gaming', label: 'Gaming Ping' },
-  { key: 'complete', label: 'Complete' },
-]
+async function testPing() {
+  const pings = []
+  for (let i = 0; i < 3; i++) {
+    const start = performance.now()
+    try {
+      const c = new AbortController()
+      setTimeout(() => c.abort(), 3000)
+      await fetch(API_BASE + '/ping', { signal: c.signal, cache: 'no-store' })
+      pings.push(performance.now() - start)
+    } catch {}
+  }
+  const valid = pings.filter(p => p !== null)
+  return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0
+}
+
+async function testDownload(onLive) {
+  const size = 5242880
+  const start = performance.now()
+  let loaded = 0
+  try {
+    const c = new AbortController()
+    setTimeout(() => c.abort(), 8000)
+    const url = IS_VERCEL
+      ? `https://speed.cloudflare.com/__down?bytes=${size}`
+      : `${API_BASE}/download?size=5mb`
+    const res = await fetch(url, { signal: c.signal, cache: 'no-store' })
+    if (!res.ok) return 0
+    const reader = res.body.getReader()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      loaded += value.length
+      const elapsed = performance.now() - start
+      if (elapsed > 0) onLive((loaded * 8) / elapsed / 1000)
+    }
+    const elapsed = performance.now() - start
+    return elapsed > 0 ? (loaded * 8) / elapsed / 1000 : 0
+  } catch { return 0 }
+}
+
+async function testUpload(onLive) {
+  const size = 524288
+  const data = new Uint8Array(size).map(() => Math.random() * 256)
+  const start = performance.now()
+  try {
+    const c = new AbortController()
+    setTimeout(() => c.abort(), 5000)
+    const url = IS_VERCEL
+      ? 'https://speed.cloudflare.com/__up'
+      : API_BASE + '/upload'
+    await fetch(url, {
+      method: 'POST', body: data, signal: c.signal, cache: 'no-store',
+    })
+    const elapsed = performance.now() - start
+    if (elapsed > 0) {
+      const speed = (size * 8) / elapsed / 1000
+      onLive(speed)
+      return speed
+    }
+    return 0
+  } catch { return 0 }
+}
 
 export default function HomePage() {
-  const { t } = useTranslation()
   const [phase, setPhase] = useState('idle')
   const [liveSpeed, setLiveSpeed] = useState(0)
-  const [progress, setProgress] = useState(0)
   const [results, setResults] = useState(null)
-  const [selectedServer, setSelectedServer] = useState('auto')
-  const [planSpeed, setPlanSpeed] = useState(() => parseInt(localStorage.getItem('tw_plan') || '0'))
-  const [testSize, setTestSize] = useState(() => localStorage.getItem('tw_testSize') || 'medium')
   const [networkInfo, setNetworkInfo] = useState(null)
   const [testing, setTesting] = useState(false)
-  const [currentResult, setCurrentResult] = useState({})
   const speedRef = useRef(0)
   const animRef = useRef(null)
 
-  const phaseIndex = PHASES.findIndex(p => p.key === phase)
-  const displaySpeed = formatSpeed(liveSpeed * 1000000)
+  const display = formatSpeed(liveSpeed * 1000)
 
   useEffect(() => {
     fetch(API_BASE + '/isp-lookup')
       .then(r => r.json())
       .catch(() => ({}))
-      .then(data => {
-        setNetworkInfo(prev => ({ ...prev, ...data }))
-      })
-
+      .then(d => setNetworkInfo(p => ({ ...p, ...d })))
     if ('connection' in navigator) {
-      const conn = navigator.connection
-      setNetworkInfo(prev => ({
-        ...prev,
-        type: conn.type || 'unknown',
-        effectiveType: conn.effectiveType,
-        downlink: conn.downlink,
-        rtt: conn.rtt,
-      }))
+      setNetworkInfo(p => ({ ...p, ...navigator.connection }))
     }
   }, [])
 
   useEffect(() => {
     if (!testing) return
-    let last = performance.now()
-    const animate = (now) => {
-      const current = speedRef.current
-      setLiveSpeed(prev => {
-        const diff = current - prev
-        return prev + diff * 0.15
-      })
+    const animate = () => {
+      const target = speedRef.current
+      setLiveSpeed(p => p + (target - p) * 0.2)
       animRef.current = requestAnimationFrame(animate)
     }
     animRef.current = requestAnimationFrame(animate)
@@ -88,192 +112,119 @@ export default function HomePage() {
   const handleStart = useCallback(async () => {
     setTesting(true)
     setResults(null)
-    setCurrentResult({})
     setLiveSpeed(0)
     speedRef.current = 0
-    setProgress(0)
-    setPhase('ping')
 
-    let serverUrl = API_BASE
-    if (selectedServer !== 'auto') {
-      const srv = findServerById(selectedServer)
-      if (srv) setNetworkInfo(prev => ({ ...prev, serverName: `${srv.isp} - ${srv.city}` }))
+    setPhase('ping')
+    const ping = await testPing()
+
+    setPhase('download')
+    const download = await testDownload(s => { speedRef.current = s })
+
+    setPhase('upload')
+    const upload = await testUpload(s => { speedRef.current = s })
+
+    const res = {
+      ping: { average: ping },
+      download: { average: download },
+      upload: { average: upload },
+      timestamp: new Date().toISOString(),
     }
 
-    try {
-      const fullResults = await runFullTest(serverUrl, {
-        planSpeed,
-        testSize,
-        useCDN: IS_VERCEL,
-        onProgress: (p) => {
-          setPhase(p.phase)
-          setProgress(p.percent)
-        },
-        onLiveSpeed: (data) => {
-          speedRef.current = data.currentMbps
-        },
-      })
-
-      speedRef.current = fullResults.download?.average || 0
-      setTimeout(() => {
-        setResults(fullResults)
-        setPhase('complete')
-        setTesting(false)
-        saveHistory(fullResults)
-        if (fullResults.throttling) setPlanSpeed(fullResults.throttling.planSpeed)
-      }, 500)
-    } catch (err) {
-      console.error('Test failed:', err)
+    speedRef.current = download
+    setTimeout(() => {
+      setResults(res)
       setTesting(false)
       setPhase('idle')
-    }
-  }, [selectedServer, planSpeed, testSize])
-
-  const connType = networkInfo ? detectConnectionType(networkInfo) : null
+      saveHistory(res)
+    }, 300)
+  }, [])
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-gray-950 text-white">
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="text-center mb-2">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-800/80 text-sm mb-3">
-            <span className={`w-2 h-2 rounded-full ${phase === 'idle' || phase === 'complete' ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
-            {networkInfo?.isp || 'Transworld'} — {connType?.icon} {connType?.label || 'Connecting...'}
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0a1628] to-gray-900 text-white flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-lg mx-auto w-full">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+            {networkInfo?.isp || 'Transworld'} &middot; {networkInfo?.ip || ''}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Transworld Speed Test</h1>
-          <p className="text-gray-400 text-sm mt-1">Pakistan's Most Comprehensive Speed Test</p>
         </div>
 
-        <div className="flex items-center justify-center my-6">
-          <div className="relative w-64 h-64 sm:w-72 sm:h-72">
-            <svg className="w-full h-full -rotate-90" viewBox="0 0 200 200">
-              <circle cx="100" cy="100" r="85" fill="none" stroke="#1e293b" strokeWidth="8" />
-              <circle
-                cx="100" cy="100" r="85" fill="none" stroke="url(#gaugeGrad)"
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={`${(Math.min(liveSpeed, 500) / 500) * 534} 534`}
-                className="transition-all duration-300 ease-out"
-              />
-              <defs>
-                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#0055A5" />
-                  <stop offset="100%" stopColor="#00B4D8" />
-                </linearGradient>
-              </defs>
-            </svg>
+        <div className="relative w-64 h-64 sm:w-72 sm:h-72 mb-4">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 200 200">
+            <circle cx="100" cy="100" r="88" fill="none" stroke="#ffffff08" strokeWidth="6" />
+            <circle
+              cx="100" cy="100" r="88" fill="none" stroke="url(#g)"
+              strokeWidth="6" strokeLinecap="round"
+              strokeDasharray={`${(Math.min(liveSpeed, 500) / 500) * 553} 553`}
+              className="transition-all duration-200"
+            />
+            <defs>
+              <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#0055A5" />
+                <stop offset="100%" stopColor="#00B4D8" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          {phase === 'idle' && !results && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                onClick={handleStart}
+                className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 shadow-2xl shadow-blue-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 font-bold text-2xl tracking-wider text-white"
+              >
+                GO
+              </button>
+            </div>
+          )}
+
+          {(phase !== 'idle' || results) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div className="text-5xl sm:text-6xl font-extrabold tracking-tight">
                 <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                  {displaySpeed.value}
+                  {display.value}
                 </span>
               </div>
-              <div className="text-gray-400 text-lg font-medium mt-1">{displaySpeed.unit}</div>
-              {phase !== 'idle' && phase !== 'complete' && (
-                <div className="text-gray-500 text-xs mt-2 font-medium tracking-wide uppercase">
-                  {PHASES.find(p => p.key === phase)?.label || phase}
-                </div>
+              <div className="text-gray-500 text-base font-medium mt-0.5">{display.unit}</div>
+              {testing && (
+                <span className="text-xs text-gray-600 mt-2 font-medium tracking-widest uppercase">
+                  {phase === 'ping' ? 'PING' : phase === 'download' ? 'DOWNLOAD' : 'UPLOAD'}
+                </span>
               )}
             </div>
-          </div>
+          )}
         </div>
 
-        {phase !== 'idle' && phase !== 'complete' && (
-          <div className="max-w-xs mx-auto mb-6">
-            <div className="flex justify-between text-xs text-gray-500 mb-1">
-              <span>Progress</span>
-              <span>{Math.round(progress)}%</span>
+        {results && (
+          <div className="w-full grid grid-cols-3 gap-4 mt-4 animate-fade-in">
+            <div className="text-center">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Ping</div>
+              <div className="text-2xl font-bold text-cyan-400">
+                {results.ping.average.toFixed(0)}
+                <span className="text-xs text-gray-600 ml-0.5">ms</span>
+              </div>
             </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+            <div className="text-center">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Download</div>
+              <div className="text-2xl font-bold text-blue-400">
+                {results.download.average.toFixed(1)}
+                <span className="text-xs text-gray-600 ml-0.5">Mbps</span>
+              </div>
             </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="bg-gray-800/60 rounded-xl p-4 text-center border border-gray-700/50">
-            <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Ping</div>
-            <div className="text-xl font-bold text-cyan-400">
-              {results ? results.ping?.average?.toFixed(0) || '—' : phase === 'ping' ? '✓' : '—'}
-              {results ? <span className="text-xs text-gray-500 ml-1">ms</span> : ''}
-            </div>
-          </div>
-          <div className="bg-gray-800/60 rounded-xl p-4 text-center border border-gray-700/50">
-            <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Jitter</div>
-            <div className="text-xl font-bold text-purple-400">
-              {results ? results.jitter?.average?.toFixed(1) || '—' : phase === 'jitter' ? '✓' : '—'}
-              {results ? <span className="text-xs text-gray-500 ml-1">ms</span> : ''}
-            </div>
-          </div>
-          <div className="bg-gray-800/60 rounded-xl p-4 text-center border border-gray-700/50">
-            <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Download</div>
-            <div className="text-xl font-bold text-blue-400">
-              {results ? results.download?.average?.toFixed(1) || '—' : phase === 'download' ? (
-                <span className="text-base font-mono">{displaySpeed.value} {displaySpeed.unit}</span>
-              ) : '—'}
-              {results ? <span className="text-xs text-gray-500 ml-1">Mbps</span> : ''}
-            </div>
-          </div>
-          <div className="bg-gray-800/60 rounded-xl p-4 text-center border border-gray-700/50">
-            <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Upload</div>
-            <div className="text-xl font-bold text-green-400">
-              {results ? results.upload?.average?.toFixed(1) || '—' : phase === 'upload' ? (
-                <span className="text-base font-mono">{displaySpeed.value} {displaySpeed.unit}</span>
-              ) : '—'}
-              {results ? <span className="text-xs text-gray-500 ml-1">Mbps</span> : ''}
-            </div>
-          </div>
-        </div>
-
-        {phase === 'idle' && (
-          <div className="text-center">
-            <button onClick={handleStart} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-16 rounded-full text-lg shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95">
-              START
-            </button>
-            <div className="mt-3 text-xs text-gray-500">
-              {networkInfo?.ip ? `IP: ${networkInfo.ip}` : ''} &middot; {selectedServer === 'auto' ? 'Auto Server' : findServerById(selectedServer)?.isp}
+            <div className="text-center">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Upload</div>
+              <div className="text-2xl font-bold text-green-400">
+                {results.upload.average.toFixed(1)}
+                <span className="text-xs text-gray-600 ml-0.5">Mbps</span>
+              </div>
             </div>
           </div>
         )}
 
         {results && (
-          <div className="space-y-3 animate-fade-in mt-4">
-            {results.packetLoss && (
-              <div className="flex justify-center">
-                <div className={`px-4 py-1.5 rounded-full text-sm font-medium ${
-                  results.packetLoss.lossPercent === 0 ? 'bg-green-900/50 text-green-400' :
-                  results.packetLoss.lossPercent <= 1 ? 'bg-yellow-900/50 text-yellow-400' :
-                  'bg-red-900/50 text-red-400'
-                }`}>
-                  Packet Loss: {results.packetLoss.lossPercent}%
-                </div>
-              </div>
-            )}
-
-            <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-700/50">
-              <div className="text-xs text-gray-400 uppercase tracking-wide mb-3">Speed Recommendations</div>
-              <div className="text-sm text-gray-300">
-                {results.download?.average < 1 ? 'Basic browsing & messaging' :
-                 results.download?.average < 3 ? 'SD YouTube, music, WhatsApp calls' :
-                 results.download?.average < 5 ? 'HD YouTube, Zoom, PUBG Lite' :
-                 results.download?.average < 10 ? '1080p streaming, Valorant, COD' :
-                 results.download?.average < 25 ? '4K streaming, GTA Online, Apex' :
-                 results.download?.average < 50 ? 'Multiple streams, all games smooth' :
-                 'Pro streaming + gaming, ultra settings'}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 justify-center flex-wrap">
-              <button onClick={handleStart} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-10 rounded-full shadow-lg shadow-blue-600/20 transition-all hover:scale-105 active:scale-95">
-                Test Again
-              </button>
-            </div>
-          </div>
-        )}
-
-        {phase === 'complete' && !results && (
-          <div className="text-center mt-4">
-            <button onClick={handleStart} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-10 rounded-full shadow-lg shadow-blue-600/20 transition-all hover:scale-105 active:scale-95">
-              Start Test
+          <div className="mt-8 text-center">
+            <button onClick={handleStart} className="px-8 py-3 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-all">
+              Test Again
             </button>
           </div>
         )}
