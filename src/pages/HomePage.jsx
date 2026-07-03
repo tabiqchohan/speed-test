@@ -223,10 +223,10 @@ export default function HomePage() {
             )
           })}
 
-          <g transform={`rotate(${needleAngle}, ${CX}, ${CY})`} style={{ transition: 'transform 0.15s ease-out', transformOrigin: `${CX}px ${CY}px` }}>
-            <polygon points={`${CX},${CY + 15} ${CX - 3},${CY - R + 55} ${CX},${CY - R + 35} ${CX + 3},${CY - R + 55}`} fill="#f87171" filter="url(#glow)" />
-            <circle cx={CX} cy={CY} r="9" fill="#1e293b" stroke="#f87171" strokeWidth="2.5" />
-            <circle cx={CX} cy={CY} r="3" fill="#f87171" />
+          <g transform={`rotate(${needleAngle}, ${CX}, ${CY})`} style={{ transition: 'transform 0.12s ease-out', transformOrigin: `${CX}px ${CY}px` }}>
+            <line x1={CX} y1={CY} x2={CX} y2={CY - R + 20} stroke="#f87171" strokeWidth="3.5" strokeLinecap="round" filter="url(#glow)" />
+            <circle cx={CX} cy={CY} r="7" fill="#1e293b" stroke="#f87171" strokeWidth="2.5" />
+            <circle cx={CX} cy={CY} r="2.5" fill="#f87171" />
           </g>
 
           {(phase !== 'idle' || results) && (
