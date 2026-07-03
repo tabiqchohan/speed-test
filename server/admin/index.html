@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transworld Speed Test - Admin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+    h1 { color: #38bdf8; margin-bottom: 24px; font-size: 24px; }
+    h2 { color: #94a3b8; font-size: 16px; margin-bottom: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .card .label { color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    .card .value { font-size: 28px; font-weight: 700; color: #38bdf8; margin-top: 8px; }
+    .card .sub { color: #64748b; font-size: 12px; margin-top: 4px; }
+    .section { margin-bottom: 32px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; background: #1e293b; color: #94a3b8; font-weight: 600; }
+    td { padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+    .status { padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .status.online { background: #166534; color: #86efac; }
+    .status.offline { background: #7f1d1d; color: #fca5a5; }
+    .bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 8px; margin-top: 4px; }
+    .bar { height: 8px; border-radius: 4px; background: #38bdf8; }
+    .refresh { padding: 8px 20px; background: #38bdf8; color: #0f172a; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-bottom: 20px; }
+    .refresh:hover { background: #7dd3fc; }
+    .error { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <h1>Transworld Speed Test — Admin Dashboard</h1>
+  <button class="refresh" onclick="loadData()">Refresh Data</button>
+
+  <div class="grid" id="statsGrid">
+    <div class="card"><div class="label">Total Tests</div><div class="value" id="totalTests">-</div></div>
+    <div class="card"><div class="label">Avg Download</div><div class="value" id="avgDownload">-</div><div class="sub">Mbps</div></div>
+    <div class="card"><div class="label">Avg Upload</div><div class="value" id="avgUpload">-</div><div class="sub">Mbps</div></div>
+    <div class="card"><div class="label">Avg Ping</div><div class="value" id="avgPing">-</div><div class="sub">ms</div></div>
+    <div class="card"><div class="label">Server Uptime</div><div class="value" id="uptime">-</div></div>
+    <div class="card"><div class="label">Server Status</div><div class="value" id="serverStatus">Checking...</div></div>
+  </div>
+
+  <div class="section">
+    <h2>City Statistics</h2>
+    <table>
+      <thead><tr><th>City</th><th>Tests</th><th>Avg Speed</th><th>Bar</th></tr></thead>
+      <tbody id="cityTable"></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>ISP Statistics</h2>
+    <table>
+      <thead><tr><th>ISP</th><th>Tests</th><th>Avg Speed</th><th>Bar</th></tr></thead>
+      <tbody id="ispTable"></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Hourly Test Distribution</h2>
+    <table>
+      <thead><tr><th>Hour</th><th>Tests</th><th>Bar</th></tr></thead>
+      <tbody id="hourlyTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    async function loadData() {
+      try {
+        const res = await fetch('/api/admin/stats')
+        const data = await res.json()
+
+        document.getElementById('totalTests').textContent = data.totalTests
+        document.getElementById('avgDownload').textContent = Math.round(data.averageDownload * 10) / 10
+        document.getElementById('avgUpload').textContent = Math.round(data.averageUpload * 10) / 10
+        document.getElementById('avgPing').textContent = Math.round(data.averagePing * 10) / 10
+        document.getElementById('serverStatus').textContent = 'Online'
+        document.getElementById('serverStatus').style.color = '#86efac'
+
+        const uptime = data.uptime || 0
+        const hours = Math.floor(uptime / 3600)
+        const mins = Math.floor((uptime % 3600) / 60)
+        document.getElementById('uptime').textContent = `${hours}h ${mins}m`
+
+        let maxCitySpeed = 1
+        Object.values(data.cityAverages || {}).forEach(c => { if (c.avgSpeed > maxCitySpeed) maxCitySpeed = c.avgSpeed })
+        let cityHtml = ''
+        for (const [city, info] of Object.entries(data.cityAverages || {})) {
+          const pct = (info.avgSpeed / maxCitySpeed) * 100
+          cityHtml += `<tr><td>${city}</td><td>${info.tests}</td><td>${info.avgSpeed} Mbps</td><td><div class="bar-container"><div class="bar" style="width:${pct}%"></div></div></td></tr>`
+        }
+        document.getElementById('cityTable').innerHTML = cityHtml || '<tr><td colspan="4">No data yet</td></tr>'
+
+        let maxIspSpeed = 1
+        Object.values(data.ispAverages || {}).forEach(i => { if (i.avgSpeed > maxIspSpeed) maxIspSpeed = i.avgSpeed })
+        let ispHtml = ''
+        for (const [isp, info] of Object.entries(data.ispAverages || {})) {
+          const pct = (info.avgSpeed / maxIspSpeed) * 100
+          ispHtml += `<tr><td>${isp}</td><td>${info.tests}</td><td>${info.avgSpeed} Mbps</td><td><div class="bar-container"><div class="bar" style="width:${pct}%"></div></div></td></tr>`
+        }
+        document.getElementById('ispTable').innerHTML = ispHtml || '<tr><td colspan="4">No data yet</td></tr>'
+
+        const maxHourly = Math.max(...(data.hourlyTests || []), 1)
+        let hourlyHtml = ''
+        for (let i = 0; i < 24; i++) {
+          const count = data.hourlyTests[i] || 0
+          const pct = (count / maxHourly) * 100
+          const label = i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`
+          hourlyHtml += `<tr><td>${label}</td><td>${count}</td><td><div class="bar-container"><div class="bar" style="width:${pct}%"></div></div></td></tr>`
+        }
+        document.getElementById('hourlyTable').innerHTML = hourlyHtml
+      } catch (e) {
+        document.getElementById('serverStatus').textContent = 'Offline'
+        document.getElementById('serverStatus').style.color = '#fca5a5'
+      }
+    }
+
+    loadData()
+    setInterval(loadData, 10000)
+  </script>
+</body>
+</html>

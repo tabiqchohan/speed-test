@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.local
+.DS_Store
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+*.keystore
