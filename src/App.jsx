@@ -12,8 +12,11 @@ export default function App() {
   const isHome = location.pathname === '/'
 
   useEffect(() => {
-    const savedDir = localStorage.getItem('tw_lang') === 'ur' ? 'rtl' : 'ltr'
-    document.documentElement.dir = savedDir
+    const lang = localStorage.getItem('tw_lang') || 'en'
+    document.documentElement.dir = lang === 'ur' ? 'rtl' : 'ltr'
+    const theme = localStorage.getItem('tw_theme') || 'dark'
+    const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    document.documentElement.classList.toggle('dark', isDark)
   }, [])
 
   if (isHome) {
