@@ -124,10 +124,19 @@ export async function testDownload(serverUrl, options = {}) {
       if (!response.ok) continue
 
       const reader = response.body.getReader()
+      const liveCb = options.onLiveSpeed || (() => {})
+      let lastReport = performance.now()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         loadedBytes += value.length
+        const now = performance.now()
+        if (now - lastReport > 200) {
+          const elapsed = now - start
+          const currentMbps = elapsed > 0 ? calculateMbps(loadedBytes, elapsed) : 0
+          liveCb({ currentMbps, loadedBytes, elapsed, phase: 'download' })
+          lastReport = now
+        }
       }
 
       const end = performance.now()
@@ -452,6 +461,7 @@ export async function runFullTest(serverUrl, options = {}) {
     size,
     samples: 3,
     useCDN,
+    onLiveSpeed: options.onLiveSpeed,
     onProgress: (p) => updateProgress('download', 30 + (p.percent * 0.3)),
   })
 
