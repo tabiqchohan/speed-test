@@ -18,7 +18,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0a1628] to-gray-900 text-white">
+    <div className="min-h-screen bg-gradient-to-b from-slate-800 via-slate-700 to-slate-800 text-white">
       <Navbar />
       <div className="pb-20 sm:pb-0">
         <Routes>
