@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { formatSpeed } from '../../shared/helpers.js'
+import { getRecommendations } from '../../shared/recommendations.js'
 import {
   testPing, testJitter, testPacketLoss, testDNS,
   testDownload, testUpload, testBufferbloat, testStability,
@@ -45,8 +46,17 @@ export default function HomePage() {
   useEffect(() => {
     fetch(API_BASE + '/isp-lookup')
       .then(r => r.json())
-      .catch(() => ({}))
       .then(d => setNetworkInfo(p => ({ ...p, ...d })))
+      .catch(() => {
+        fetch('https://ip-api.com/json/?fields=status,isp,org,city,country,query')
+          .then(r => r.json())
+          .then(d => {
+            if (d.status === 'success') {
+              setNetworkInfo(p => ({ ...p, isp: d.isp || d.org, ip: d.query, city: d.city }))
+            }
+          })
+          .catch(() => {})
+      })
     if ('connection' in navigator) {
       setNetworkInfo(p => ({ ...p, ...navigator.connection }))
     }
@@ -124,13 +134,16 @@ export default function HomePage() {
     }, 300)
   }, [])
 
+  const recs = results?.download?.average ? getRecommendations(results.download.average) : null
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0a1628] to-gray-900 text-white flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-2xl mx-auto w-full">
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400 mb-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-            {networkInfo?.isp || 'Transworld'} &middot; {networkInfo?.ip || ''}
+            {networkInfo?.isp || 'Transworld'}&nbsp;·&nbsp;{networkInfo?.ip || ''}
+            {networkInfo?.city && <>&nbsp;·&nbsp;{networkInfo.city}</>}
           </div>
         </div>
 
@@ -194,6 +207,22 @@ export default function HomePage() {
               <ResultCard label="Bufferbloat" value={results.bufferbloat?.bufferbloat?.toFixed(0)} unit="ms" color="text-orange-400" />
               <ResultCard label="Stability" value={<StabGrade score={results.stability?.score} />} unit="" color="" />
             </div>
+
+            {recs && (
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2 font-medium">What you can do</div>
+                <div className="flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: recs.activity.color }} />
+                  <span className="text-sm text-gray-300">{recs.activity.label}</span>
+                </div>
+                {recs.games.games.length > 0 && (
+                  <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
+                    <span>🎮</span>
+                    <span>{recs.games.games.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {results.gamingServers && (
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
