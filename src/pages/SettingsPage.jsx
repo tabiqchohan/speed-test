@@ -28,121 +28,92 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleExportPDF = () => {
+  const handleExport = () => {
     const history = JSON.parse(localStorage.getItem('tw_history') || '[]')
-    if (history.length === 0) { alert('No data to export.'); return }
+    if (history.length === 0) { alert('No data.'); return }
     const text = history.map((h, i) =>
       `#${i + 1}: ${new Date(h.date).toLocaleDateString()} - Down: ${(h.download?.average || 0).toFixed(1)} Mbps, Up: ${(h.upload?.average || 0).toFixed(1)} Mbps, Ping: ${(h.ping?.average || 0).toFixed(0)} ms`
     ).join('\n---\n')
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `speed-test-report-${Date.now()}.txt`
-    a.click()
+    a.href = url; a.download = `speed-report-${Date.now()}.txt`; a.click()
     URL.revokeObjectURL(url)
   }
 
   const toggleLang = () => {
-    const newLang = i18n.language === 'en' ? 'ur' : 'en'
-    i18n.changeLanguage(newLang)
-    localStorage.setItem('tw_lang', newLang)
-    document.documentElement.dir = newLang === 'ur' ? 'rtl' : 'ltr'
+    const nl = i18n.language === 'en' ? 'ur' : 'en'
+    i18n.changeLanguage(nl)
+    localStorage.setItem('tw_lang', nl)
+    document.documentElement.dir = nl === 'ur' ? 'rtl' : 'ltr'
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">{t('settings.title')}</h1>
+    <div className="max-w-2xl mx-auto px-4 py-6">
+      <h1 className="text-lg font-bold text-white/90 mb-5">Settings</h1>
 
-      <div className="space-y-4">
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('settings.language')}</h2>
-          <button
-            onClick={toggleLang}
-            className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-sm font-medium transition-colors"
-          >
+      <div className="space-y-3">
+        <Section title="Language">
+          <button onClick={toggleLang} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 transition-colors">
             {i18n.language === 'en' ? 'اردو میں تبدیل کریں' : 'Switch to English'}
           </button>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('settings.theme')}</h2>
-          <div className="flex gap-3">
+        <Section title="Theme">
+          <div className="flex gap-2">
             {[
-              { key: 'dark', label: t('settings.dark'), icon: '🌙' },
-              { key: 'light', label: t('settings.light'), icon: '☀️' },
-              { key: 'system', label: t('settings.system'), icon: '💻' },
+              { key: 'dark', label: 'Dark', icon: '🌙' },
+              { key: 'light', label: 'Light', icon: '☀️' },
+              { key: 'system', label: 'System', icon: '💻' },
             ].map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setTheme(opt.key)}
-                className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  theme === opt.key
-                    ? 'bg-transworld-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              <button key={opt.key} onClick={() => setTheme(opt.key)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  theme === opt.key ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
                 }`}
               >
                 {opt.icon} {opt.label}
               </button>
             ))}
           </div>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('settings.testSize')}</h2>
-          <div className="flex gap-3">
+        <Section title="Test File Size">
+          <div className="flex gap-2">
             {[
-              { key: 'small', label: t('settings.small') },
-              { key: 'medium', label: t('settings.medium') },
-              { key: 'large', label: t('settings.large') },
+              { key: 'small', label: 'Small (10MB)' },
+              { key: 'medium', label: 'Medium (50MB)' },
+              { key: 'large', label: 'Large (100MB)' },
             ].map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setTestSize(opt.key)}
-                className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  testSize === opt.key
-                    ? 'bg-transworld-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              <button key={opt.key} onClick={() => setTestSize(opt.key)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  testSize === opt.key ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
                 }`}
               >
                 {opt.label}
               </button>
             ))}
           </div>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">Unit Scale</h2>
-          <div className="flex gap-3">
-            {[
-              { key: 'auto', label: 'Auto' },
-              { key: 'Mbps', label: 'Mbps' },
-              { key: 'Kbps', label: 'Kbps' },
-              { key: 'Gbps', label: 'Gbps' },
-            ].map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setUnitPref(opt.key)}
-                className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  unitPref === opt.key
-                    ? 'bg-transworld-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+        <Section title="Unit Scale">
+          <div className="flex gap-2">
+            {['auto', 'Mbps', 'Kbps', 'Gbps'].map(opt => (
+              <button key={opt} onClick={() => setUnitPref(opt)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  unitPref === opt ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
                 }`}
               >
-                {opt.label}
+                {opt}
               </button>
             ))}
           </div>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('settings.server')}</h2>
-          <select
-            value={selectedIsp}
-            onChange={e => setSelectedIsp(e.target.value)}
-            className="input w-full"
+        <Section title="Server">
+          <select value={selectedIsp} onChange={e => setSelectedIsp(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none"
           >
-            <option value="">{t('settings.autoServer')}</option>
+            <option value="">Auto (Best Ping)</option>
             {allIsps.map(isp => (
               <optgroup key={isp.name} label={`${isp.name} (${isp.cities.join(', ')})`}>
                 {isp.servers.map(s => (
@@ -151,47 +122,49 @@ export default function SettingsPage() {
               </optgroup>
             ))}
           </select>
-          <p className="text-xs text-gray-400 mt-2">Select a specific server or leave on Auto for best ping</p>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('throttling.plan')}</h2>
+        <Section title="Plan Speed (for throttling detection)">
           <div className="flex gap-3">
-            <input
-              type="number"
-              placeholder="e.g. 50"
-              value={planSpeed}
+            <input type="number" placeholder="e.g. 50" value={planSpeed}
               onChange={e => setPlanSpeed(e.target.value)}
-              className="input flex-1"
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none"
             />
-            <span className="flex items-center text-gray-500">Mbps</span>
+            <span className="flex items-center text-sm text-gray-500">Mbps</span>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Enter your plan speed for throttling detection and plan vs actual comparison</p>
-        </div>
+          <p className="text-[11px] text-gray-700 mt-1.5">Enter your plan speed to detect throttling</p>
+        </Section>
 
-        <button onClick={handleSave} className="btn-primary w-full">
-          {saved ? '✓ Saved!' : 'Save Settings'}
+        <button onClick={handleSave} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 text-sm font-medium text-white hover:opacity-90 transition-all">
+          {saved ? '✓ Saved' : 'Save Settings'}
         </button>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">{t('tips.title')}</h2>
-          <ul className="space-y-2">
-            {SPEED_TIPS.slice(0, 6).map((tip, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <span className="text-transworld-500 mt-0.5">{i18n.language === 'ur' ? '•' : '•'}</span>
+        <Section title="Speed Tips">
+          <ul className="space-y-1.5">
+            {SPEED_TIPS.slice(0, 5).map((tip, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-gray-500">
+                <span className="text-blue-400 mt-0.5">•</span>
                 {tip}
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
 
-        <div className="card">
-          <h2 className="font-semibold mb-4">Export Data</h2>
-          <button onClick={handleExportPDF} className="btn-secondary">
+        <Section title="Export">
+          <button onClick={handleExport} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-400 hover:bg-white/10 transition-colors">
             Export History as Text
           </button>
-        </div>
+        </Section>
       </div>
+    </div>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-4 border border-white/[0.06]">
+      <h2 className="text-xs text-gray-500 font-medium mb-3 uppercase tracking-wider">{title}</h2>
+      {children}
     </div>
   )
 }

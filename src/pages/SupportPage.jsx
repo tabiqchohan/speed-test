@@ -52,116 +52,74 @@ export default function SupportPage() {
 
   if (submitted) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-        <div className="text-6xl mb-4">✅</div>
-        <h2 className="text-2xl font-bold mb-2">{t('support.title')}</h2>
-        <p className="text-gray-500 mb-6">{t('support.success')}</p>
-        <button onClick={() => setSubmitted(false)} className="btn-primary">
-          {t('support.submit')} Again
+      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+        <div className="text-5xl mb-4">✅</div>
+        <h2 className="text-lg font-bold text-white/90 mb-2">{t('support.title')}</h2>
+        <p className="text-sm text-gray-500 mb-6">{t('support.success')}</p>
+        <button onClick={() => setSubmitted(false)} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 text-sm font-medium text-white">
+          Submit Again
         </button>
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-2">{t('support.title')}</h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-6">{t('support.subtitle')}</p>
+    <div className="max-w-2xl mx-auto px-4 py-6">
+      <h1 className="text-lg font-bold text-white/90 mb-1">{t('support.title')}</h1>
+      <p className="text-sm text-gray-500 mb-5">{t('support.subtitle')}</p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="label">{t('support.name')}</label>
-          <input
-            type="text"
-            required
-            value={form.name}
-            onChange={e => updateField('name', e.target.value)}
-            className="input"
-            placeholder="Muhammad Ali"
-          />
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-4 border border-white/[0.06] space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.name')}</label>
+            <input type="text" required value={form.name} onChange={e => updateField('name', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none placeholder:text-gray-700" placeholder="Muhammad Ali" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.phone')}</label>
+            <input type="tel" required value={form.phone} onChange={e => updateField('phone', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none placeholder:text-gray-700" placeholder="03XX-XXXXXXX" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.email')}</label>
+            <input type="email" value={form.email} onChange={e => updateField('email', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none placeholder:text-gray-700" placeholder="email@example.com" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.connectionType')}</label>
+            <select value={form.connectionType} onChange={e => updateField('connectionType', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none">
+              <option value="">Select type</option>
+              <option value="Fiber">Fiber</option>
+              <option value="DSL">DSL</option>
+              <option value="4G">4G</option>
+              <option value="5G">5G</option>
+              <option value="WiFi">WiFi</option>
+              <option value="Ethernet">Ethernet</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.planSpeed')}</label>
+            <input type="number" value={form.planSpeed} onChange={e => updateField('planSpeed', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none" placeholder="50" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t('support.issue')}</label>
+            <textarea required rows={3} value={form.issue} onChange={e => updateField('issue', e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none resize-none placeholder:text-gray-700" placeholder="Describe your issue..." />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={attachResult} onChange={e => setAttachResult(e.target.checked)}
+              className="rounded accent-blue-500" />
+            <span className="text-xs text-gray-500">
+              {t('support.attachResult')}
+              {latestResult && <span className="text-gray-600 ml-1">({latestResult.download?.average?.toFixed(1) || 0} Mbps)</span>}
+            </span>
+          </label>
         </div>
 
-        <div>
-          <label className="label">{t('support.phone')}</label>
-          <input
-            type="tel"
-            required
-            value={form.phone}
-            onChange={e => updateField('phone', e.target.value)}
-            className="input"
-            placeholder="03XX-XXXXXXX"
-          />
-        </div>
-
-        <div>
-          <label className="label">{t('support.email')}</label>
-          <input
-            type="email"
-            value={form.email}
-            onChange={e => updateField('email', e.target.value)}
-            className="input"
-            placeholder="email@example.com"
-          />
-        </div>
-
-        <div>
-          <label className="label">{t('support.connectionType')}</label>
-          <select
-            value={form.connectionType}
-            onChange={e => updateField('connectionType', e.target.value)}
-            className="input"
-          >
-            <option value="">Select type</option>
-            <option value="Fiber">Fiber</option>
-            <option value="DSL">DSL</option>
-            <option value="4G">4G</option>
-            <option value="5G">5G</option>
-            <option value="WiFi">WiFi</option>
-            <option value="Ethernet">Ethernet</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="label">{t('support.planSpeed')}</label>
-          <input
-            type="number"
-            value={form.planSpeed}
-            onChange={e => updateField('planSpeed', e.target.value)}
-            className="input"
-            placeholder="50"
-          />
-        </div>
-
-        <div>
-          <label className="label">{t('support.issue')}</label>
-          <textarea
-            required
-            rows={4}
-            value={form.issue}
-            onChange={e => updateField('issue', e.target.value)}
-            className="input resize-none"
-            placeholder="Describe your issue in detail..."
-          />
-        </div>
-
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={attachResult}
-            onChange={e => setAttachResult(e.target.checked)}
-            className="rounded text-transworld-500 focus:ring-transworld-500"
-          />
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            {t('support.attachResult')}
-            {latestResult && (
-              <span className="text-gray-400 ml-1">
-                ({latestResult.download?.average?.toFixed(1) || 0} Mbps)
-              </span>
-            )}
-          </span>
-        </label>
-
-        <button type="submit" disabled={submitting} className="btn-primary w-full">
+        <button type="submit" disabled={submitting}
+          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 text-sm font-medium text-white hover:opacity-90 transition-all">
           {submitting ? 'Submitting...' : t('support.submit')}
         </button>
       </form>
