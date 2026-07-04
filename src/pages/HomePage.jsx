@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from 'recharts'
-import { formatSpeed } from '../../shared/helpers.js'
+import { formatSpeed, calcNetworkQuality, calcConsistency, isPeakHourPK, getWiFiAdvice, getEthernetAdvice, getComparativePercentile, generateResultCard } from '../../shared/helpers.js'
 import { getRecommendations } from '../../shared/recommendations.js'
 import { getAllISPs } from '../../shared/servers.js'
 import { ISP_COMPARISON } from '../../shared/constants.js'
@@ -79,6 +79,9 @@ export default function HomePage() {
   const [speedSamples, setSpeedSamples] = useState([])
   const [selectedIsp, setSelectedIsp] = useState(() => getS('tw_server_isp', ''))
   const [unitPref] = useState(() => getS('tw_unit', 'auto'))
+  const [multiResults, setMultiResults] = useState([])
+  const [showAlert, setShowAlert] = useState(false)
+  const [alertMsg, setAlertMsg] = useState('')
   const speedRef = useRef(0)
   const animRef = useRef(null)
   const samplesRef = useRef([])
@@ -144,15 +147,43 @@ export default function HomePage() {
 
     const res = { ping, jitter, packetLoss: pl, dns, download: dl, upload: ul, bufferbloat: bb, stability: st, gamingServers: gs, throttling: th, timestamp: new Date().toISOString() }
     speedRef.current = dl?.average || 0
-    setTimeout(() => { setResults(res); setTesting(false); setPhase('idle'); saveHistory(res) }, 300)
-  }, [collectSample])
 
-  const handleShare = useCallback(() => {
+    const multiMode = getS('tw_multi_test', 'off') === 'on'
+    if (multiMode) {
+      const prev = [...multiResults, res]
+      setMultiResults(prev)
+      if (prev.length >= 3) {
+        const avgDl = prev.reduce((s, r) => s + (r.download?.average || 0), 0) / 3
+        const avgUl = prev.reduce((s, r) => s + (r.upload?.average || 0), 0) / 3
+        const avgPg = prev.reduce((s, r) => s + (r.ping?.average || 0), 0) / 3
+        res.multiAvg = { download: avgDl, upload: avgUl, ping: avgPg }
+        setMultiResults([])
+      } else {
+        setResults(null); setTesting(false); setPhase('idle')
+        setTimeout(() => handleStart(), 1000)
+        return
+      }
+    }
+
+    const alertThreshold = parseFloat(getS('tw_alert_threshold', '0'))
+    if (alertThreshold > 0 && (dl?.average || 0) < alertThreshold) {
+      setAlertMsg(`Speed dropped below ${alertThreshold} Mbps! Current: ${dl?.average?.toFixed(1)} Mbps`)
+      setShowAlert(true)
+      setTimeout(() => setShowAlert(false), 5000)
+    }
+
+    setTimeout(() => { setResults(res); setTesting(false); setPhase('idle'); saveHistory(res) }, 300)
+  }, [collectSample, multiResults])
+
+  const handleShare = useCallback((whatsapp) => {
     if (!results) return
-    const t = `Transworld Speed Test:\n📥 ${results.download?.average?.toFixed(1)} Mbps\n📤 ${results.upload?.average?.toFixed(1)} Mbps\n📶 ${results.ping?.average?.toFixed(0)} ms ping`
+    const t = whatsapp
+      ? `Transworld Speed Test Results:%0A📥 ${results.download?.average?.toFixed(1)} Mbps download%0A📤 ${results.upload?.average?.toFixed(1)} Mbps upload%0A📶 ${results.ping?.average?.toFixed(0)} ms ping%0A🧠 Quality: ${quality?.score}/100 - ${quality?.label}%0ATested at speedtest-transworld.vercel.app`
+      : `Transworld Speed Test:\n📥 ${results.download?.average?.toFixed(1)} Mbps\n📤 ${results.upload?.average?.toFixed(1)} Mbps\n📶 ${results.ping?.average?.toFixed(0)} ms ping`
+    if (whatsapp) { window.open(`https://wa.me/?text=${t}`, '_blank'); return }
     if (navigator.share) navigator.share({ title: 'Transworld Speed Test', text: t })
     else navigator.clipboard.writeText(t).then(() => alert('Copied!'))
-  }, [results])
+  }, [results, quality])
 
   const isps = getAllISPs()
   const down = results?.download?.average || 0
@@ -163,9 +194,25 @@ export default function HomePage() {
   const ct = networkInfo ? detectConnectionType({ speed: down, latency: results?.ping?.average, connection: networkInfo }) : null
   const ia = networkInfo?.isp && ISP_COMPARISON[networkInfo.isp] ? ISP_COMPARISON[networkInfo.isp] : null
   const du = results?.download?.totalBytes && results?.upload?.totalBytes ? ((results.download.totalBytes + results.upload.totalBytes) / 1048576).toFixed(0) + ' MB' : '~12 MB'
+  const quality = results ? calcNetworkQuality({
+    download: down, upload: results.upload?.average || 0,
+    ping: results.ping?.average || 0, jitter: results.jitter?.average || 0,
+    packetLoss: results.packetLoss?.lossPercent || 0,
+    stability: results.stability?.score || 0,
+  }) : null
+  const consistency = results && samplesRef.current.length > 3 ? calcConsistency(samplesRef.current.map(s => s.s)) : null
+  const peakHr = isPeakHourPK()
+  const wifiAdvice = getWiFiAdvice(ct, down, consistency)
+  const ethAdvice = getEthernetAdvice(ct, down)
+  const compPct = getComparativePercentile(ia, down)
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-xl mx-auto w-full py-4">
+      {showAlert && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 backdrop-blur-xl bg-red-500/20 border border-red-500/30 rounded-xl px-4 py-2.5 text-sm text-red-300 animate-fade-in shadow-2xl">
+          ⚠️ {alertMsg}
+        </div>
+      )}
       <div className="w-full flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/[0.08]">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -325,6 +372,17 @@ export default function HomePage() {
             </div>
           )}
 
+          {results.multiAvg && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Multi-Test Average (3 runs)</div>
+              <div className="flex items-center gap-4 text-xs">
+                <div><span className="text-blue-400">{results.multiAvg.download?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↓</span></div>
+                <div><span className="text-green-400">{results.multiAvg.upload?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↑</span></div>
+                <div><span className="text-cyan-400">{results.multiAvg.ping?.toFixed(0)}</span> <span className="text-gray-600">ms</span></div>
+              </div>
+            </div>
+          )}
+
           {ests.length > 0 && (
             <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
               <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Download Estimates</div>
@@ -332,6 +390,69 @@ export default function HomePage() {
                 {ests.map((e, i) => (
                   <div key={i}><div className="text-[9px] text-gray-600">{e.label}</div><div className="text-xs font-medium text-cyan-400">{e.time}</div></div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {quality && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Network Quality</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold" style={{ color: quality.color }}>{quality.score}/100</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: quality.color + '20', color: quality.color }}>{quality.label}</span>
+                </div>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${quality.score}%`, backgroundColor: quality.color }} />
+              </div>
+            </div>
+          )}
+
+          {consistency != null && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Speed Consistency</div>
+                <span className={`text-xs font-bold ${consistency >= 80 ? 'text-green-400' : consistency >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{consistency}%</span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${consistency}%`, backgroundColor: consistency >= 80 ? '#34d399' : consistency >= 50 ? '#fbbf24' : '#f87171' }} />
+              </div>
+            </div>
+          )}
+
+          {wifiAdvice && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: wifiAdvice.color }}>
+                <span>{wifiAdvice.icon}</span>
+                <span>{wifiAdvice.msg}</span>
+              </div>
+            </div>
+          )}
+
+          {ethAdvice && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: ethAdvice.color }}>
+                <span>{ethAdvice.icon}</span>
+                <span>{ethAdvice.msg}</span>
+              </div>
+            </div>
+          )}
+
+          {peakHr && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center gap-2 text-xs text-yellow-400">
+                <span>🌙</span>
+                <span>Peak hours (7 PM - 11 PM) — speeds may be slower than usual</span>
+              </div>
+            </div>
+          )}
+
+          {compPct != null && (
+            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+              <div className="flex items-center gap-2 text-xs text-gray-300">
+                <span>📊</span>
+                <span>Your speed is better than <strong className="text-white">{compPct}%</strong> of {networkInfo?.isp || 'ISP'} users</span>
               </div>
             </div>
           )}
@@ -354,7 +475,8 @@ export default function HomePage() {
 
           <div className="flex items-center justify-center gap-3 pt-1">
             <button onClick={handleStart} className="px-7 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 active:scale-95 transition-all">Test Again</button>
-            <button onClick={handleShare} className="px-7 py-2.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-sm font-medium text-blue-300 hover:bg-blue-500/25 active:scale-95 transition-all">Share</button>
+            <button onClick={() => handleShare(false)} className="px-7 py-2.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-sm font-medium text-blue-300 hover:bg-blue-500/25 active:scale-95 transition-all">Share</button>
+            <button onClick={() => handleShare(true)} className="px-7 py-2.5 rounded-full bg-green-500/15 border border-green-500/25 text-sm font-medium text-green-300 hover:bg-green-500/25 active:scale-95 transition-all">WhatsApp</button>
           </div>
         </div>
       )}
