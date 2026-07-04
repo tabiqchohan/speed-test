@@ -175,16 +175,6 @@ export default function HomePage() {
     setTimeout(() => { setResults(res); setTesting(false); setPhase('idle'); saveHistory(res) }, 300)
   }, [collectSample, multiResults])
 
-  const handleShare = useCallback((whatsapp) => {
-    if (!results) return
-    const t = whatsapp
-      ? `Transworld Speed Test Results:%0A📥 ${results.download?.average?.toFixed(1)} Mbps download%0A📤 ${results.upload?.average?.toFixed(1)} Mbps upload%0A📶 ${results.ping?.average?.toFixed(0)} ms ping%0A🧠 Quality: ${quality?.score}/100 - ${quality?.label}%0ATested at speedtest-transworld.vercel.app`
-      : `Transworld Speed Test:\n📥 ${results.download?.average?.toFixed(1)} Mbps\n📤 ${results.upload?.average?.toFixed(1)} Mbps\n📶 ${results.ping?.average?.toFixed(0)} ms ping`
-    if (whatsapp) { window.open(`https://wa.me/?text=${t}`, '_blank'); return }
-    if (navigator.share) navigator.share({ title: 'Transworld Speed Test', text: t })
-    else navigator.clipboard.writeText(t).then(() => alert('Copied!'))
-  }, [results, quality])
-
   const isps = getAllISPs()
   const down = results?.download?.average || 0
   const grade = results ? getGrade(down) : null
@@ -205,6 +195,16 @@ export default function HomePage() {
   const wifiAdvice = getWiFiAdvice(ct, down, consistency)
   const ethAdvice = getEthernetAdvice(ct, down)
   const compPct = getComparativePercentile(ia, down)
+
+  const handleShare = useCallback((whatsapp) => {
+    if (!results) return
+    const t = whatsapp
+      ? `Transworld Speed Test Results:%0A📥 ${results.download?.average?.toFixed(1)} Mbps download%0A📤 ${results.upload?.average?.toFixed(1)} Mbps upload%0A📶 ${results.ping?.average?.toFixed(0)} ms ping%0A🧠 Quality: ${quality?.score}/100 - ${quality?.label}%0ATested at speedtest-transworld.vercel.app`
+      : `Transworld Speed Test:\n📥 ${results.download?.average?.toFixed(1)} Mbps\n📤 ${results.upload?.average?.toFixed(1)} Mbps\n📶 ${results.ping?.average?.toFixed(0)} ms ping`
+    if (whatsapp) { window.open(`https://wa.me/?text=${t}`, '_blank'); return }
+    if (navigator.share) navigator.share({ title: 'Transworld Speed Test', text: t })
+    else navigator.clipboard.writeText(t).then(() => alert('Copied!'))
+  }, [results, quality])
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-xl mx-auto w-full py-4">
