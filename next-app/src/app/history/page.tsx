@@ -1,16 +1,25 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { ssrSafeGet, ssrSafeSet, ssrSafeParseJSON, ssrSafeRemove } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface TestResult {
-  timestamp: string
-  download: number
-  upload: number
-  ping: number
-  packetLoss: number
-  qualityScore: number
+  id?: string
+  timestamp?: string
+  date?: string
+  download?: { average?: number }
+  upload?: { average?: number }
+  ping?: { average?: number }
+  jitter?: { average?: number }
+  packetLoss?: { lossPercent?: number }
+  dns?: { average?: number }
+  bufferbloat?: { bufferbloat?: number }
+  stability?: { score?: number }
+  gamingServers?: any
+  qualityScore?: number
+  connectionType?: string
 }
 
 const container = {
@@ -28,13 +37,14 @@ export default function HistoryPage() {
   const [tests, setTests] = useState<TestResult[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'7d' | '30d' | 'all'>('all')
+  const [networkFilter, setNetworkFilter] = useState(() => ssrSafeGet('tw_network_filter', 'all'))
 
   useEffect(() => {
-    const raw = localStorage.getItem('tw_history')
+    const raw = ssrSafeGet('tw_history')
     if (raw) {
       try {
         const parsed: TestResult[] = JSON.parse(raw)
-        setTests(parsed.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()))
+        setTests(parsed.sort((a, b) => new Date(b.timestamp || b.date || Date.now()).getTime() - new Date(a.timestamp || a.date || Date.now()).getTime()))
       } catch {
         setTests([])
       }
@@ -43,29 +53,35 @@ export default function HistoryPage() {
   }, [])
 
   const filtered = tests.filter((r) => {
-    if (filter === 'all') return true
-    const days = filter === '7d' ? 7 : 30
-    const cutoff = Date.now() - days * 86400000
-    return new Date(r.timestamp).getTime() >= cutoff
+    if (filter !== 'all') {
+      const days = filter === '7d' ? 7 : 30
+      const cutoff = Date.now() - days * 86400000
+      if (new Date(r.timestamp || r.date || Date.now()).getTime() < cutoff) return false
+    }
+    if (networkFilter !== 'all' && r.connectionType) {
+      if (networkFilter === 'wifi' && r.connectionType !== 'wifi' && r.connectionType !== 'ethernet') return false
+      if (networkFilter === 'mobile' && r.connectionType !== '4g' && r.connectionType !== '5g') return false
+    }
+    return true
   })
 
   const stats = {
-    avgDownload: filtered.length ? filtered.reduce((s, r) => s + r.download, 0) / filtered.length : 0,
-    avgUpload: filtered.length ? filtered.reduce((s, r) => s + r.upload, 0) / filtered.length : 0,
-    avgPing: filtered.length ? filtered.reduce((s, r) => s + r.ping, 0) / filtered.length : 0,
-    maxSpeed: filtered.length ? Math.max(...filtered.map((r) => Math.max(r.download, r.upload))) : 0,
-    minSpeed: filtered.length ? Math.min(...filtered.map((r) => Math.min(r.download, r.upload))) : 0,
+    avgDownload: filtered.length ? filtered.reduce((s, r) => s + (r.download?.average || 0), 0) / filtered.length : 0,
+    avgUpload: filtered.length ? filtered.reduce((s, r) => s + (r.upload?.average || 0), 0) / filtered.length : 0,
+    avgPing: filtered.length ? filtered.reduce((s, r) => s + (r.ping?.average || 0), 0) / filtered.length : 0,
+    maxSpeed: filtered.length ? Math.max(...filtered.map((r) => Math.max(r.download?.average || 0, r.upload?.average || 0))) : 0,
+    minSpeed: filtered.length ? Math.min(...filtered.map((r) => Math.min(r.download?.average || 0, r.upload?.average || 0))) : 0,
   }
 
   const chartData = [...filtered].reverse().map((r) => ({
-    date: new Date(r.timestamp).toLocaleDateString(),
-    download: parseFloat(r.download.toFixed(2)),
-    upload: parseFloat(r.upload.toFixed(2)),
-    ping: parseFloat(r.ping.toFixed(1)),
+    date: new Date(r.timestamp || r.date || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+    download: parseFloat((r.download?.average || 0).toFixed(2)),
+    upload: parseFloat((r.upload?.average || 0).toFixed(2)),
+    ping: parseFloat((r.ping?.average || 0).toFixed(1)),
   }))
 
   const handleClear = () => {
-    localStorage.removeItem('tw_history')
+    ssrSafeRemove('tw_history')
     setTests([])
   }
 
@@ -73,12 +89,12 @@ export default function HistoryPage() {
     const headers = 'Date,Download (Mbps),Upload (Mbps),Ping (ms),Packet Loss (%),Quality Score'
     const rows = filtered.map((r) =>
       [
-        new Date(r.timestamp).toLocaleString(),
-        r.download.toFixed(2),
-        r.upload.toFixed(2),
-        r.ping.toFixed(1),
-        r.packetLoss.toFixed(1),
-        r.qualityScore,
+        new Date(r.timestamp || r.date || Date.now()).toLocaleString(),
+        (r.download?.average || 0).toFixed(2),
+        (r.upload?.average || 0).toFixed(2),
+        (r.ping?.average || 0).toFixed(1),
+        (r.packetLoss?.lossPercent || 0).toFixed(1),
+        r.qualityScore ?? Math.round(100 - ((r.ping?.average || 0) / 2) - ((r.packetLoss?.lossPercent || 0) * 5)),
       ].join(',')
     )
     const csv = [headers, ...rows].join('\n')
@@ -134,6 +150,26 @@ export default function HistoryPage() {
             }`}
           >
             {key === '7d' ? '7 Days' : key === '30d' ? '30 Days' : 'All Time'}
+          </motion.button>
+        ))}
+      </motion.div>
+
+      {/* Network Filter */}
+      <motion.div className="flex gap-2" variants={container} initial="hidden" animate="show">
+        {[
+          { key: 'all', label: 'All Connections', icon: '📶' },
+          { key: 'wifi', label: 'WiFi/Ethernet', icon: '📡' },
+          { key: 'mobile', label: 'Mobile (4G/5G)', icon: '📱' },
+        ].map(opt => (
+          <motion.button
+            key={opt.key}
+            variants={item}
+            onClick={() => setNetworkFilter(opt.key)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+              networkFilter === opt.key ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+            }`}
+          >
+            {opt.icon} {opt.label}
           </motion.button>
         ))}
       </motion.div>
@@ -213,13 +249,13 @@ export default function HistoryPage() {
             {filtered.map((r, i) => (
               <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
                 <td className="py-2 pr-4 text-gray-300 whitespace-nowrap">
-                  {new Date(r.timestamp).toLocaleDateString()}
+                  {new Date(r.timestamp || r.date || Date.now()).toLocaleDateString()}
                 </td>
-                <td className="text-right px-2 text-blue-400">{r.download.toFixed(1)}</td>
-                <td className="text-right px-2 text-green-400">{r.upload.toFixed(1)}</td>
-                <td className="text-right px-2 text-yellow-400">{r.ping.toFixed(1)}</td>
-                <td className="text-right px-2">{r.packetLoss.toFixed(1)}%</td>
-                <td className="text-right pl-2 font-semibold">{r.qualityScore}</td>
+                <td className="text-right px-2 text-blue-400">{(r.download?.average || 0).toFixed(1)}</td>
+                <td className="text-right px-2 text-green-400">{(r.upload?.average || 0).toFixed(1)}</td>
+                <td className="text-right px-2 text-yellow-400">{(r.ping?.average || 0).toFixed(1)}</td>
+                <td className="text-right px-2">{(r.packetLoss?.lossPercent || 0).toFixed(1)}%</td>
+                <td className="text-right pl-2 font-semibold">{r.qualityScore ?? Math.round(100 - ((r.ping?.average || 0) / 2) - ((r.packetLoss?.lossPercent || 0) * 5))}</td>
               </tr>
             ))}
           </tbody>

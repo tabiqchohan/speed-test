@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { ssrSafeGet, ssrSafeSet, ssrSafeParseJSON, ssrSafeRemove } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 
@@ -69,9 +70,9 @@ export default function SupportPage() {
       timestamp: new Date().toISOString(),
     }
 
-    const existing = JSON.parse(localStorage.getItem('tw_complaints') || '[]')
+    const existing = ssrSafeParseJSON('tw_complaints', [] as any[])
     existing.push(complaint)
-    localStorage.setItem('tw_complaints', JSON.stringify(existing))
+    ssrSafeSet('tw_complaints', JSON.stringify(existing))
 
     setSubmitted(true)
     setForm({ name: '', phone: '', email: '', connectionType: 'Fiber', issue: '', planSpeed: '', attachLatest: false })

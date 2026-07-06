@@ -11,11 +11,14 @@ export async function POST(request: NextRequest) {
   const end = performance.now();
   const duration = end - start;
 
+  const averageMbps = duration > 0 ? (size / duration) * 8 / 1000 / 1000 : 0;
+
   return NextResponse.json(
     {
       size,
       duration: Math.round(duration),
       unit: 'ms',
+      average: Math.round(averageMbps * 100) / 100,
     },
     {
       headers: {

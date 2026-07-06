@@ -153,3 +153,57 @@ export function generateResultCard(results: any) {
     'Tested at speedtest-transworld.vercel.app',
   ].join('\n')
 }
+
+export function downloadResultCardPNG(results: any) {
+  if (!results) return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 600
+  canvas.height = 400
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.fillStyle = '#0f172a'
+  ctx.fillRect(0, 0, 600, 400)
+
+  const grad = ctx.createLinearGradient(0, 0, 600, 0)
+  grad.addColorStop(0, '#0055A5')
+  grad.addColorStop(1, '#22d3ee')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 600, 60)
+
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 22px system-ui'
+  ctx.fillText('Transworld Speed Test Pro', 20, 38)
+
+  ctx.font = '14px system-ui'
+  const data = [
+    { label: 'Download', value: `${results.download?.average?.toFixed(1) || '--'} Mbps`, color: '#60a5fa' },
+    { label: 'Upload', value: `${results.upload?.average?.toFixed(1) || '--'} Mbps`, color: '#34d399' },
+    { label: 'Ping', value: `${results.ping?.average?.toFixed(0) || '--'} ms`, color: '#22d3ee' },
+    { label: 'Jitter', value: `${results.jitter?.average?.toFixed(1) || '--'} ms`, color: '#a78bfa' },
+    { label: 'Packet Loss', value: `${results.packetLoss?.lossPercent?.toFixed(1) || '0'}%`, color: results.packetLoss?.lossPercent > 0 ? '#f87171' : '#34d399' },
+  ]
+
+  data.forEach((d, i) => {
+    const y = 100 + i * 50
+    ctx.fillStyle = '#94a3b8'
+    ctx.font = '13px system-ui'
+    ctx.fillText(d.label, 20, y)
+    ctx.fillStyle = d.color
+    ctx.font = 'bold 18px system-ui'
+    ctx.fillText(d.value, 20, y + 22)
+  })
+
+  ctx.fillStyle = '#64748b'
+  ctx.font = '11px system-ui'
+  ctx.fillText('Tested at speedtest-transworld.vercel.app', 20, 365)
+
+  ctx.textAlign = 'right'
+  ctx.fillText(new Date().toLocaleDateString(), 580, 365)
+
+  const link = document.createElement('a')
+  link.download = `speed-result-${Date.now()}.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+}

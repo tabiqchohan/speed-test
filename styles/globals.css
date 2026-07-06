@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom color variables for the Transworld Speed Test Pro theme */
+:root {
+  --color-primary: # 0f172a; /* deep indigo */
+  --color-secondary: # 334155; /* muted indigo */
+  --color-accent: # 6366f1; /* vibrant indigo */
+  --color-light: # e2e8f0; /* soft gray */
+  --color-dark: # 2d3748; /* darker gray */
+  --color-gray-100: # f7fafc; /* very light gray */
+  --color-gray-900: # 1a202c; /* almost black */
+}
+
+/* Dark mode support */
+[data-theme='dark'] {
+  --color-bg: # 1a202c;
+  --color-fg: # d1d5db;
+  --color-primary: # 6366f1;
+  --color-secondary: # 8f92a5;
+  --color-accent: # 7c3aed;
+  --color-light: # 334155;
+  --color-dark: # 475569;
+}
+
+/* Apply variables across the app */
+body {
+  @apply bg-[var(--color-bg,_bg)] text-[var(--color-fg,_fg)] bg-gray-50 antialiased;
+}

@@ -7,3 +7,7 @@ mobile/android/.gradle/
 mobile/android/app/build/
 mobile/android/build/
 *.keystore
+.next/
+next-app/.next/
+next-app/node_modules/
+app/

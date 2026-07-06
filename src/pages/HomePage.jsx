@@ -15,7 +15,6 @@ const API_BASE = '/api'
 const IS_VERCEL = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
 const MAX_SPEED = 1000
 const CX = 200, CY = 200, R = 155
-
 const ARC_FULL = 2 * Math.PI * R * 0.75
 const PHASE_LABELS = {
   ping: 'Ping', jitter: 'Jitter', packet_loss: 'Packet Loss',
@@ -26,7 +25,7 @@ const PHASE_LABELS = {
 const VIDEO_QUALITY = [
   { min: 0, max: 0.5, label: 'Voice Only', color: 'text-red-400', icon: '📞' },
   { min: 0.5, max: 1, label: 'SD Video 360p', color: 'text-orange-400', icon: '📹' },
-  { min: 1, max: 2, label: 'HD Video 720p', color: 'text-yellow-400', icon: '📹' },
+  { min: 1, max: 2, label: 'HD Video 720p', color: 'text-yellow-400', icon: '🎥' },
   { min: 2, max: 4, label: 'Full HD 1080p', color: 'text-lime-400', icon: '🎥' },
   { min: 4, max: 8, label: '4K / Group HD', color: 'text-green-400', icon: '🎥' },
   { min: 8, max: Infinity, label: 'Multi 4K', color: 'text-cyan-400', icon: '📺' },
@@ -36,7 +35,7 @@ const GRADES = [
   { min: 100, max: 200, grade: 'A', color: '#34d399', label: 'Excellent' },
   { min: 50, max: 100, grade: 'B', color: '#60a5fa', label: 'Great' },
   { min: 20, max: 50, grade: 'C', color: '#fbbf24', label: 'Good' },
-  { min: 5, max: 20, grade: 'D', color: '#fb923c', label: 'Fair' },
+  { min: 5, max: 20, grade: 'D', color: '#f87171', label: 'Poor' },
   { min: 0, max: 5, grade: 'F', color: '#f87171', label: 'Poor' },
 ]
 
@@ -80,16 +79,12 @@ export default function HomePage() {
   const [selectedIsp, setSelectedIsp] = useState(() => getS('tw_server_isp', ''))
   const [unitPref] = useState(() => getS('tw_unit', 'auto'))
   const [multiResults, setMultiResults] = useState([])
-  const [showAlert, setShowAlert] = useState(false)
-  const [alertMsg, setAlertMsg] = useState('')
+  const [toastMessage, setToastMessage] = useState('')
+  const [toastOpen, setToastOpen] = useState(false)
   const speedRef = useRef(0)
   const animRef = useRef(null)
   const samplesRef = useRef([])
   const lastSampleRef = useRef(0)
-
-  const d = formatUnit(liveSpeed, unitPref)
-  const pct = Math.min(liveSpeed / MAX_SPEED, 1)
-  const needleAngle = pct * 270 - 45
 
   useEffect(() => {
     fetch(API_BASE + '/isp-lookup').then(r => r.json()).then(d => setNetworkInfo(p => ({ ...p, ...d })))
@@ -165,12 +160,22 @@ export default function HomePage() {
       }
     }
 
-    const alertThreshold = parseFloat(getS('tw_alert_threshold', '0'))
-    if (alertThreshold > 0 && (dl?.average || 0) < alertThreshold) {
-      setAlertMsg(`Speed dropped below ${alertThreshold} Mbps! Current: ${dl?.average?.toFixed(1)} Mbps`)
-      setShowAlert(true)
-      setTimeout(() => setShowAlert(false), 5000)
+    // BEGIN NEW THRESHOLD LOGIC
+    const downloadThreshold = parseFloat(getS('tw_download_alert_threshold', '0'));
+    const uploadThreshold = parseFloat(getS('tw_upload_alert_threshold', '0'));
+
+    if (downloadThreshold > 0 && dl?.average && dl.average < downloadThreshold) {
+      const msg = `Download speed below threshold (${downloadThreshold} Mbps). Current: ${dl.average?.toFixed(1)} Mbps`;
+      setToastMessage(msg);
+      setToastOpen(true);
     }
+    if (uploadThreshold > 0 && ul?.average && ul.average < uploadThreshold) {
+      const msg = `Upload speed below threshold (${uploadThreshold} Mbps). Current: ${ul.average?.toFixed(1)} Mbps`;
+      setToastMessage(msg);
+      setToastOpen(true);
+    }
+    setTimeout(() => setToastOpen(false), 5000);
+    // END NEW THRESHOLD LOGIC
 
     setTimeout(() => { setResults(res); setTesting(false); setPhase('idle'); saveHistory(res) }, 300)
   }, [collectSample, multiResults])
@@ -208,9 +213,9 @@ export default function HomePage() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-xl mx-auto w-full py-4">
-      {showAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 backdrop-blur-xl bg-red-500/20 border border-red-500/30 rounded-xl px-4 py-2.5 text-sm text-red-300 animate-fade-in shadow-2xl">
-          ⚠️ {alertMsg}
+      {toastOpen && (
+        <div className="fixed top-4 right-4 z-50 bg-red-500/20 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-300 shadow-lg animate-fade-in">
+          ⚠️ {toastMessage}
         </div>
       )}
       <div className="w-full flex items-center justify-between mb-1">
@@ -253,10 +258,10 @@ export default function HomePage() {
             return <line key={s} x1={o.x} y1={o.y} x2={i.x} y2={i.y} stroke="#ffffff20" strokeWidth="2.5" strokeLinecap="round" />
           })}
 
-          {[50, 150, 250, 350, 450, 550, 650, 750, 850, 950].map(s => {
+          {MAJOR_TICKS.map(s => {
             const a = 225 + (s / 1000) * 270
             const o = polar(R - 8, a)
-            const i = polar(R - 18, a)
+            const i = polar(R - 24, a)
             return <line key={s} x1={o.x} y1={o.y} x2={i.x} y2={i.y} stroke="#ffffff0d" strokeWidth="1.5" strokeLinecap="round" />
           })}
 
@@ -264,11 +269,10 @@ export default function HomePage() {
             const a = 225 + (s / 1000) * 270
             const p = polar(R - 34, a)
             return (
-              <text key={s} x={p.x} y={p.y + 3} textAnchor="middle" className="fill-gray-600" fontSize="11" fontFamily="system-ui" fontWeight="500">
+              <text key={s} x={p.x} y={p.y + 3} textAnchor="middle" className="fill-gray-600" fontSize="11" fontFamily="system-ui">
                 {s}
               </text>
-            )
-          })}
+            )})}
 
           <g transform={`rotate(${needleAngle}, ${CX}, ${CY})`} style={{ transition: 'transform 0.12s ease-out', transformOrigin: `${CX}px ${CY}px` }}>
             <line x1={CX} y1={CY} x2={CX} y2={CY - R + 20} stroke="#f87171" strokeWidth="3.5" strokeLinecap="round" filter="url(#glow)" />
@@ -305,181 +309,181 @@ export default function HomePage() {
             </button>
           </div>
         )}
-      </div>
 
-      {speedSamples.length > 1 && (
-        <div className="w-full h-14 -mt-3 mb-1">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={speedSamples}>
-              <XAxis dataKey="t" hide /><YAxis hide domain={[0, 'auto']} />
-              <Line type="monotone" dataKey="s" stroke="#22d3ee" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {results && (
-        <div className="w-full space-y-2.5 animate-fade-in mt-0.5">
-          <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-            <div className="grid grid-cols-4 gap-1.5">
-              <Mic label="Ping" v={results.ping?.average?.toFixed(0)} u="ms" c="#22d3ee" />
-              <Mic label="Jitter" v={results.jitter?.average?.toFixed(1)} u="ms" c="#a78bfa" />
-              <Mic label="Download" v={results.download?.average?.toFixed(1)} u="Mbps" c="#60a5fa" />
-              <Mic label="Upload" v={results.upload?.average?.toFixed(1)} u="Mbps" c="#34d399" />
-            </div>
-            <div className="grid grid-cols-4 gap-1.5 mt-1.5">
-              <Mic label="P.Loss" v={results.packetLoss?.lossPercent?.toFixed(1)} u="%" c={results.packetLoss?.lossPercent > 0 ? '#f87171' : '#34d399'} />
-              <Mic label="DNS" v={results.dns?.average?.toFixed(0)} u="ms" c="#fbbf24" />
-              <Mic label="Bufferbloat" v={results.bufferbloat?.bufferbloat?.toFixed(0)} u="ms" c="#fb923c" />
-              <Mic label="Stability" v={results.stability?.score ?? '--'} u="" c={results.stability?.score >= 90 ? '#34d399' : results.stability?.score >= 70 ? '#fbbf24' : '#f87171'} />
-            </div>
+        {speedSamples.length > 1 && (
+          <div className="w-full h-14 -mt-3 mb-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={speedSamples}>
+                <XAxis dataKey="t" hide /><YAxis hide domain={[0, 'auto']} />
+                <Line type="monotone" dataKey="s" stroke="#22d3ee" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
+        )}
 
-          {recs && (
+        {results && (
+          <div className="w-full space-y-2.5 animate-fade-in mt-0.5">
             <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: recs.activity.color }} />
-                  <span className="text-gray-300">{recs.activity.label}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                  <span>{video.icon}</span>
-                  <span className={video.color}>{video.label}</span>
-                </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                <Mic label="Ping" v={results.ping?.average?.toFixed(0)} u="ms" c="#22d3ee" />
+                <Mic label="Jitter" v={results.jitter?.average?.toFixed(1)} u="ms" c="#a78bfa" />
+                <Mic label="Download" v={results.download?.average?.toFixed(1)} u="Mbps" c="#60a5fa" />
+                <Mic label="Upload" v={results.upload?.average?.toFixed(1)} u="Mbps" c="#34d399" />
               </div>
-              {recs.games.games.length > 0 && (
-                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">🎮 {recs.games.games.join(', ')}</div>
-              )}
-            </div>
-          )}
-
-          {ia && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">vs {networkInfo?.isp} Avg</div>
-              <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-blue-400 font-medium">{results.download?.average?.toFixed(0)}</span>
-                  <span className="text-gray-600">/</span>
-                  <span className="text-gray-500">{ia.avgDownload} Mbps</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-green-400 font-medium">{results.upload?.average?.toFixed(0)}</span>
-                  <span className="text-gray-600">/</span>
-                  <span className="text-gray-500">{ia.avgUpload} Mbps</span>
-                </div>
-                <span className="text-gray-600 text-[10px]">{ia.type}</span>
+              <div className="grid grid-cols-4 gap-1.5 mt-1.5">
+                <Mic label="P.Loss" v={results.packetLoss?.lossPercent?.toFixed(1)} u="%" c={results.packetLoss?.lossPercent > 0 ? '#f87171' : '#34d399'} />
+                <Mic label="DNS" v={results.dns?.average?.toFixed(0)} u="ms" c="#fbbf24" />
+                <Mic label="Bufferbloat" v={results.bufferbloat?.bufferbloat?.toFixed(0)} u="ms" c="#fb923c" />
+                <Mic label="Stability" v={results.stability?.score ?? '--'} u="" c={results.stability?.score >= 90 ? '#34d399' : results.stability?.score >= 70 ? '#fbbf24' : '#f87171'} />
               </div>
             </div>
-          )}
 
-          {results.multiAvg && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Multi-Test Average (3 runs)</div>
-              <div className="flex items-center gap-4 text-xs">
-                <div><span className="text-blue-400">{results.multiAvg.download?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↓</span></div>
-                <div><span className="text-green-400">{results.multiAvg.upload?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↑</span></div>
-                <div><span className="text-cyan-400">{results.multiAvg.ping?.toFixed(0)}</span> <span className="text-gray-600">ms</span></div>
-              </div>
-            </div>
-          )}
-
-          {ests.length > 0 && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Download Estimates</div>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                {ests.map((e, i) => (
-                  <div key={i}><div className="text-[9px] text-gray-600">{e.label}</div><div className="text-xs font-medium text-cyan-400">{e.time}</div></div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {quality && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Network Quality</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold" style={{ color: quality.color }}>{quality.score}/100</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: quality.color + '20', color: quality.color }}>{quality.label}</span>
-                </div>
-              </div>
-              <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${quality.score}%`, backgroundColor: quality.color }} />
-              </div>
-            </div>
-          )}
-
-          {consistency != null && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Speed Consistency</div>
-                <span className={`text-xs font-bold ${consistency >= 80 ? 'text-green-400' : consistency >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{consistency}%</span>
-              </div>
-              <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${consistency}%`, backgroundColor: consistency >= 80 ? '#34d399' : consistency >= 50 ? '#fbbf24' : '#f87171' }} />
-              </div>
-            </div>
-          )}
-
-          {wifiAdvice && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center gap-2 text-xs" style={{ color: wifiAdvice.color }}>
-                <span>{wifiAdvice.icon}</span>
-                <span>{wifiAdvice.msg}</span>
-              </div>
-            </div>
-          )}
-
-          {ethAdvice && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center gap-2 text-xs" style={{ color: ethAdvice.color }}>
-                <span>{ethAdvice.icon}</span>
-                <span>{ethAdvice.msg}</span>
-              </div>
-            </div>
-          )}
-
-          {peakHr && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center gap-2 text-xs text-yellow-400">
-                <span>🌙</span>
-                <span>Peak hours (7 PM - 11 PM) — speeds may be slower than usual</span>
-              </div>
-            </div>
-          )}
-
-          {compPct != null && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="flex items-center gap-2 text-xs text-gray-300">
-                <span>📊</span>
-                <span>Your speed is better than <strong className="text-white">{compPct}%</strong> of {networkInfo?.isp || 'ISP'} users</span>
-              </div>
-            </div>
-          )}
-
-          {results.gamingServers && (
-            <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2 font-medium">Gaming Servers</div>
-              <div className="grid grid-cols-5 gap-x-2 gap-y-1">
-                {Object.entries(results.gamingServers).map(([k, s]) => (
-                  <div key={k} className="text-center">
-                    <div className="text-[8px] text-gray-600 truncate">{s?.name || k}</div>
-                    <div className={`text-[11px] font-bold ${s?.ping <= 50 ? 'text-green-400' : s?.ping <= 100 ? 'text-yellow-400' : s?.ping <= 200 ? 'text-orange-400' : 'text-red-400'}`}>
-                      {s?.ping || '--'}<span className="text-[8px] text-gray-700">ms</span>
-                    </div>
+            {recs && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: recs.activity.color }} />
+                    <span className="text-gray-300">{recs.activity.label}</span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <span>{video.icon}</span>
+                    <span className={video.color}>{video.label}</span>
+                  </div>
+                </div>
+                {recs.games.games.length > 0 && (
+                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">🎮 {recs.games.games.join(', ')}</div>
+                )}
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="flex items-center justify-center gap-3 pt-1">
-            <button onClick={handleStart} className="px-7 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 active:scale-95 transition-all">Test Again</button>
-            <button onClick={() => handleShare(false)} className="px-7 py-2.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-sm font-medium text-blue-300 hover:bg-blue-500/25 active:scale-95 transition-all">Share</button>
-            <button onClick={() => handleShare(true)} className="px-7 py-2.5 rounded-full bg-green-500/15 border border-green-500/25 text-sm font-medium text-green-300 hover:bg-green-500/25 active:scale-95 transition-all">WhatsApp</button>
+            {ia && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">vs {networkInfo?.isp} Avg</div>
+                <div className="flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-blue-400 font-medium">{results.download?.average?.toFixed(0)}</span>
+                    <span className="text-gray-600">/</span>
+                    <span className="text-gray-500">{ia.avgDownload} Mbps</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-green-400 font-medium">{results.upload?.average?.toFixed(0)}</span>
+                    <span className="text-gray-600">/</span>
+                    <span className="text-gray-500">{ia.avgUpload} Mbps</span>
+                  </div>
+                  <span className="text-gray-600 text-[10px]">{ia.type}</span>
+                </div>
+              </div>
+            )}
+
+            {results.multiAvg && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Multi-Test Average (3 runs)</div>
+                <div className="flex items-center gap-4 text-xs">
+                  <div><span className="text-blue-400">{results.multiAvg.download?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↓</span></div>
+                  <div><span className="text-green-400">{results.multiAvg.upload?.toFixed(1)}</span> <span className="text-gray-600">Mbps ↑</span></div>
+                  <div><span className="text-cyan-400">{results.multiAvg.ping?.toFixed(0)}</span> <span className="text-gray-600">ms</span></div>
+                </div>
+              </div>
+            )}
+
+            {ests.length > 0 && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-medium">Download Estimates</div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {ests.map((e, i) => (
+                    <div key={i}><div className="text-[9px] text-gray-600">{e.label}</div><div className="text-xs font-medium text-cyan-400">{e.time}</div></div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {quality && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Network Quality</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold" style={{ color: quality.color }}>{quality.score}/100</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: quality.color + '20', color: quality.color }}>{quality.label}</span>
+                  </div>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${quality.score}%`, backgroundColor: quality.color }} />
+                </div>
+              </div>
+            )}
+
+            {consistency != null && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Speed Consistency</div>
+                  <span className={`text-xs font-bold ${consistency >= 80 ? 'text-green-400' : consistency >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{consistency}%</span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${consistency}%`, backgroundColor: consistency >= 80 ? '#34d399' : consistency >= 50 ? '#fbbf24' : '#f87171' }} />
+                </div>
+              </div>
+            )}
+
+            {wifiAdvice && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center gap-2 text-xs" style={{ color: wifiAdvice.color }}>
+                  <span>{wifiAdvice.icon}</span>
+                  <span>{wifiAdvice.msg}</span>
+                </div>
+              </div>
+            )}
+
+            {ethAdvice && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center gap-2 text-xs" style={{ color: ethAdvice.color }}>
+                  <span>{ethAdvice.icon}</span>
+                  <span>{ethAdvice.msg}</span>
+                </div>
+              </div>
+            )}
+
+            {peakHr && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center gap-2 text-xs text-yellow-400">
+                  <span>🌙</span>
+                  <span>Peak hours (7 PM - 11 PM) — speeds may be slower than usual</span>
+                </div>
+              </div>
+            )}
+
+            {compPct != null && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="flex items-center gap-2 text-xs text-gray-300">
+                  <span>📊</span>
+                  <span>Your speed is better than <strong className="text-white">{compPct}%</strong> of {networkInfo?.isp || 'ISP'} users</span>
+                </div>
+              </div>
+            )}
+
+            {results.gamingServers && (
+              <div className="backdrop-blur-xl bg-white/[0.04] rounded-2xl p-3 border border-white/[0.06]">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2 font-medium">Gaming Servers</div>
+                <div className="grid grid-cols-5 gap-x-2 gap-y-1">
+                  {Object.entries(results.gamingServers).map(([k, s]) => (
+                    <div key={k} className="text-center">
+                      <div className="text-[8px] text-gray-600 truncate">{s?.name || k}</div>
+                      <div className={`text-[11px] font-bold ${s?.ping <= 50 ? 'text-green-400' : s?.ping <= 100 ? 'text-yellow-400' : s?.ping <= 200 ? 'text-orange-400' : 'text-red-400'}`}>
+                        {s?.ping || '--'}<span className="text-[8px] text-gray-700">ms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <button onClick={handleStart} className="px-7 py-2.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 active:scale-95 transition-all">Test Again</button>
+              <button onClick={() => handleShare(false)} className="px-7 py-2.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-sm font-medium text-blue-300 hover:bg-blue-500/25 active:scale-95 transition-all">Share</button>
+              <button onClick={() => handleShare(true)} className="px-7 py-2.5 rounded-full bg-green-500/15 border border-green-500/25 text-sm font-medium text-green-300 hover:bg-green-500/25 active:scale-95 transition-all">WhatsApp</button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
