@@ -5,10 +5,11 @@ function parseSize(sizeParam: string | null): number {
   const match = sizeParam.match(/^(\d+)\s*(mb|gb|kb)?$/i);
   if (!match) return 5242880;
   const num = parseInt(match[1], 10);
-  const unit = (match[2] || 'mb').toLowerCase();
+  const unit = (match[2] || '').toLowerCase();
   if (unit === 'gb') return num * 1024 * 1024 * 1024;
+  if (unit === 'mb') return num * 1024 * 1024;
   if (unit === 'kb') return num * 1024;
-  return num * 1024 * 1024;
+  return num;
 }
 
 function parseSamples(samplesParam: string | null): number {
@@ -49,8 +50,6 @@ export async function GET(request: NextRequest) {
   const simulatedSpeedMbps = (size / elapsed) * 8 / 1000;
   const averageMbps = simulatedSpeedMbps / samples;
 
-  const base64 = Buffer.from(buffer).toString('base64');
-
   const headers: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store',
@@ -59,7 +58,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       size,
-      data: base64,
       average: Math.round(averageMbps * 100) / 100,
       currentMbps: Math.round(simulatedSpeedMbps * 100) / 100,
     },
