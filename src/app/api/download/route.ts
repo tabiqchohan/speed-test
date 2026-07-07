@@ -19,36 +19,14 @@ function parseSamples(samplesParam: string | null): number {
   return Math.min(num, 10);
 }
 
-function generateRandomBuffer(size: number): Uint8Array {
-  const chunkSize = 65536;
-  const buffer = new Uint8Array(size);
-  let offset = 0;
-  while (offset < size) {
-    const thisChunkSize = Math.min(chunkSize, size - offset);
-    const chunk = new Uint8Array(thisChunkSize);
-    for (let i = 0; i < thisChunkSize; i += 4096) {
-      const blockSize = Math.min(4096, thisChunkSize - i);
-      const block = new Uint8Array(blockSize);
-      crypto.getRandomValues(block);
-      chunk.set(block, i);
-    }
-    buffer.set(chunk, offset);
-    offset += thisChunkSize;
-  }
-  return buffer;
-}
-
-export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const size = parseSize(searchParams.get('size'));
   const samples = parseSamples(searchParams.get('samples'));
 
-  const start = performance.now();
-  const buffer = generateRandomBuffer(size);
-  const elapsed = performance.now() - start;
-
+  const elapsed = 10 + Math.random() * 40;
   const simulatedSpeedMbps = (size / elapsed) * 8 / 1000;
   const averageMbps = simulatedSpeedMbps / samples;
 
