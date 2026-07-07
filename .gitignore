@@ -1,13 +1,5 @@
-node_modules/
+.next
+node_modules
+*.tsbuildinfo
+next-env.d.ts
 dist/
-.env
-*.local
-.DS_Store
-mobile/android/.gradle/
-mobile/android/app/build/
-mobile/android/build/
-*.keystore
-.next/
-next-app/.next/
-next-app/node_modules/
-app/
